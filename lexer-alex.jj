@@ -1,0 +1,350 @@
+/* Bantam Java Compiler and Language Toolset.
+
+   Copyright (C) 2007 by Marc Corliss (corliss@hws.edu) and 
+                         E Christopher Lewis (lewis@vmware.com).
+   ALL RIGHTS RESERVED.
+
+   The Bantam Java toolset is distributed under the following 
+   conditions:
+
+     You may make copies of the toolset for your own use and 
+     modify those copies.
+
+     All copies of the toolset must retain the author names and 
+     copyright notice.
+
+     You may not sell the toolset or distribute it in 
+     conjunction with a commerical product or service without 
+     the expressed written consent of the authors.
+
+   THIS SOFTWARE IS PROVIDED ``AS IS'' AND WITHOUT ANY EXPRESS 
+   OR IMPLIED WARRANTIES, INCLUDING, WITHOUT LIMITATION, THE 
+   IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A 
+   PARTICULAR PURPOSE. 
+*/
+
+options {
+  JAVA_UNICODE_ESCAPE = true;
+}
+
+PARSER_BEGIN(Lexer)
+  package lexer;
+  import util.*;
+  import java.util.Vector;
+
+  /** A class for performing lexical analysis */
+  public class Lexer {
+    /** Maximum string length allowed */
+    public static final int MAX_STRING_LENGTH = 5000;
+    /** Is debugging enabled? */
+    private static boolean debug = false;
+    /** Filenames of source files */
+    private static String[] filenames = null;
+    /** Input streams of source files */
+    private static java.io.FileInputStream[] fileReaders = null;
+    /** Current file number (index into filenames and fileReaders) */
+    private static int fileCnt = 0;
+    
+    /** Lexer constructor 
+      * @param filenames array of filenames for the source files
+      * @param debug flag indicating whether debugging is enabled
+      * */
+    public Lexer(String[] filenames, boolean debug) {
+      // set debugging flag
+      this.debug = debug;
+      
+      // initialize filenames field to parameter filenames
+      // used later for finding the name of the current file
+      this.filenames = filenames;
+      
+      // check that there is at least one specified filename
+      if (filenames.length == 0)
+          throw new RuntimeException(
+                "Must specify at least one filename to scan");
+      
+      initFiles(/*first time?*/true);
+    }
+    
+    /** Initialize (or reinitialize) file readers
+      * @param firstTime flag indicating whether this is the first
+      * time through
+      * */ 
+    private void initFiles(boolean firstTime) {
+      // must initialize readers for each file (FileInputStream)
+      fileReaders = new java.io.FileInputStream[filenames.length];
+      for (int i = 0; i < filenames.length; i++) {
+        // try...catch checks if file is found
+        try {
+          // create the ith file reader
+          fileReaders[i] = new java.io.FileInputStream(filenames[i]);
+        }
+        catch(java.io.FileNotFoundException e) {
+          // if file not found then report an error and exit
+          System.err.println("Error: file '" + filenames[i] +
+                             "' not found");
+          System.exit(1);
+        }
+      }
+      
+      if (firstTime) {
+        try {
+          jj_input_stream = new JavaCharStream(fileReaders[0], null, 1, 1);
+        }
+        catch(java.io.UnsupportedEncodingException e) {
+          throw new RuntimeException(e);
+        }
+        token_source = new LexerTokenManager(jj_input_stream);
+      }
+      else
+        jj_input_stream.ReInit(fileReaders[0], 1, 1);	      
+    }
+    
+    /** Scan the input files and print their tokens
+      * */
+    public void scanAndPrintTokens() throws ParseException {
+      // reinitialize the files
+      initFiles(/*first time?*/false);
+      
+      for (fileCnt = 0; fileCnt < fileReaders.length; fileCnt++) {
+        System.out.println("# " + filenames[fileCnt]);
+        for (token = token_source.getNextToken();
+             token != null && token.kind != EOF; 
+             token = token_source.getNextToken()) {
+          System.out.println("# line " + token.beginLine);
+          if (token.kind == ID)
+            System.out.println("<ID, " + token.image + ">");
+          else if (token.kind == INT_CONST)
+            System.out.println("<INT_CONST, " + token.image + ">");
+          else if (token.kind == BOOLEAN_CONST)
+            System.out.println("<BOOLEAN_CONST, " + token.image + ">");
+          else if (token.kind == STRING_CONST) {
+            System.out.println("<STRING_CONST, " + token.image +
+              ", [length: " + computeLengthAndCheck(token) + "] >");
+          }		
+          else
+            System.out.println("<" + token.image.toUpperCase() + ", >");
+        }
+        
+        // move to next file
+        if (fileCnt < fileReaders.length - 1)
+          jj_input_stream.ReInit(fileReaders[fileCnt+1], 1, 1);
+      }
+      
+      System.out.println("# line " + token.beginLine);
+      System.out.println("<EOF, >");
+    }
+    
+    /** Get the filename of the file currently being scanned
+      * */
+    public static String getCurrFilename() {
+      return filenames[fileCnt];
+    }
+    
+    /** Given a STRING_CONST token, compute and return the number of
+      * characters in the corresponding Java string. Note, for example,
+      * that the two-character substring "\\" in the token's lexeme counts as
+      * the single character '\' in the corresponding Java String.
+      * Also detect and register all of the following lexical errors:
+      *   + Each and every illegal escape character in the string.
+      *   + Each and every newline character (i.e., '\n', as opposed to the
+      *     substring "\n") in the string.
+      *   + The corresponding Java string contains more than MAX_STRING_LENGTH
+      *     characters.
+      * */
+    private static int computeLengthAndCheck(Token token) {
+      int chars = 0;
+      boolean closed = false;
+      boolean escape = false;
+      
+      for (int i = 1; i < token.image.length(); i++) {
+        Character c = token.image.charAt(i);
+        if (c == '"' && !escape) {
+          closed = true;
+          break;
+        }
+        
+        if (c == '\n') {
+          token_source.errorHandler.register(
+            token_source.errorHandler.LEX_ERROR, Lexer.getCurrFilename(),
+            JavaCharStream.getBeginLine(), "String spans more than one line");
+        }
+        
+        if (!escape)
+          chars++;
+        else {
+          switch (c) {
+            // valid escape chars
+            case 'n':
+            case 't':
+            case '"':
+            case '\\':
+            case 'f':
+              break;
+            default:
+              token_source.errorHandler.register(
+                token_source.errorHandler.LEX_ERROR, Lexer.getCurrFilename(),
+                JavaCharStream.getBeginLine(), "Illegal escape character: \\"
+                                               + c);
+              break;
+          }
+        }
+        
+        escape = !escape && c == '\\';
+      }
+      
+      if (!closed) {
+        token_source.errorHandler.register(token_source.errorHandler.LEX_ERROR,
+          Lexer.getCurrFilename(), JavaCharStream.getBeginLine(),
+          "Unterminated string starting with " + token.image.charAt(0));
+      }
+      
+      if (chars > MAX_STRING_LENGTH) {
+        token_source.errorHandler.register(token_source.errorHandler.LEX_ERROR,
+          Lexer.getCurrFilename(), JavaCharStream.getBeginLine(),
+          "String constant is too long");
+      }
+      
+      return chars;
+    }
+  }
+PARSER_END(Lexer)
+
+TOKEN_MGR_DECLS :
+{
+  // Use this for error handling
+  public static ErrorHandler errorHandler = new ErrorHandler();
+}
+
+/* modify/add your lexer rules below */
+
+TOKEN : /* KEYWORDS and SPECIAL SYMBOLS */
+{
+  < CLASS: "class" >
+|
+  < EXTENDS: "extends" >
+|
+  < WHILE: "while" >
+|
+  < FOR: "for" >
+|
+  < IF: "if" >
+|
+  < ELSE: "else" >
+|
+  < NEW: "new" >
+|
+  < RETURN: "return" >
+|
+  < BREAK: "break" >
+|
+  < INSTANCEOF: "instanceof" >
+|
+  < EQ: "==" >
+|
+  < NEQ: "!=" >
+|
+  < LEQ: "<=" >
+|
+  < GEQ: ">=" >
+|
+  < LT: "<" >
+|
+  < GT: ">" >
+|
+  < AND: "&&" >
+|
+  < OR: "||" >
+|
+  < NOT: "!" >
+|
+  < LBRACE: "{" >
+|
+  < RBRACE: "}" >
+|
+  < LBRACK: "[" >
+|
+  < RBRACK: "]" >
+|
+  < LPAREN: "(" >
+|
+  < RPAREN: ")" >
+|
+  < ASSIGN: "=" >
+|
+  < SEMICOLON: ";" >
+|
+  < PERIOD: "." >
+|
+  < COMMA: "," >
+|
+  < COLON: ":" >
+|
+  < INC: "++" >
+|
+  < DEC: "--" >
+|
+  < PLUS: "+" >
+|
+  < MINUS: "-" >
+|
+  < TIMES: "*" >
+|
+  < DIV: "/" >
+|
+  < MOD: "%" >
+}
+
+TOKEN : /* CONSTANTS */
+{
+  < INT_CONST: (["0"-"9"])+ > {
+    if (Double.parseDouble(image.toString()) > Integer.MAX_VALUE)
+      errorHandler.register(errorHandler.LEX_ERROR,
+        Lexer.getCurrFilename(), JavaCharStream.getBeginLine(),
+        "Integer exceeds maximum value allowed: " + image);
+  }
+|
+  < BOOLEAN_CONST: "true" | "false" >
+|
+  < STRING_CONST: "\"" ("\\" ~[] | ~["\\", "\""])* "\"" >
+}
+
+TOKEN : /* IDs */
+{
+  < ID: ["a"-"z","A"-"Z"] (["a"-"z","A"-"Z","0"-"9","_"])* >
+}
+
+<*>
+TOKEN : /* EOF */
+{
+  <EOF> { errorHandler.checkErrors(); }
+}
+
+SKIP :
+{
+  < ([" ","\t","\n"])+ >
+|
+  < "//" (~["\n"])+ >
+|
+  < "/*" (~["*"] | "*" ~["/"])* "*/" >
+}
+
+TOKEN : /* INVALID */
+{
+  < "\"" > {
+    errorHandler.register(errorHandler.LEX_ERROR,
+      Lexer.getCurrFilename(), JavaCharStream.getBeginLine(),
+      "Unterminated string starting with " + image);
+  }
+|
+  < "/*" > {
+    errorHandler.register(errorHandler.LEX_ERROR,
+      Lexer.getCurrFilename(), JavaCharStream.getBeginLine(),
+      "Unterminated multi-line comment starting with " + image);
+  }
+|
+  < ~[] > {
+    errorHandler.register(errorHandler.LEX_ERROR,
+      Lexer.getCurrFilename(), JavaCharStream.getBeginLine(),
+      "Unsupported character: " + image);
+  }
+}
