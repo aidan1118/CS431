@@ -1,0 +1,524 @@
+/* Bantam Java Compiler and Language Toolset.
+
+   Copyright (C) 2007 by Marc Corliss (corliss@hws.edu) and 
+                         E Christopher Lewis (lewis@vmware.com).
+   ALL RIGHTS RESERVED.
+
+   The Bantam Java toolset is distributed under the following 
+   conditions:
+
+     You may make copies of the toolset for your own use and 
+     modify those copies.
+
+     All copies of the toolset must retain the author names and 
+     copyright notice.
+
+     You may not sell the toolset or distribute it in 
+     conjunction with a commerical product or service without 
+     the expressed written consent of the author.
+
+   THIS SOFTWARE IS PROVIDED ``AS IS'' AND WITHOUT ANY EXPRESS 
+   OR IMPLIED WARRANTIES, INCLUDING, WITHOUT LIMITATION, THE 
+   IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A 
+   PARTICULAR PURPOSE. 
+*/
+
+options {
+  JAVA_UNICODE_ESCAPE = true;
+}
+
+PARSER_BEGIN(Parser)
+  package parser;
+
+  import util.*;
+  import java.util.Stack;
+  import java.util.Iterator;
+
+  /** A class for performing syntactic analysis
+   * */
+  public class Parser {
+      /** Maximum string size allowed */
+      public static final int MAX_STRING_SIZE = 5000;
+      /** Is debugging enabled? */
+      private static boolean debug = false;
+      /** Filenames of source files */
+      private static String[] filenames = null;
+      /** Input streams of source files */
+      private static java.io.FileInputStream[] fileReaders = null;
+      /** Current file number (index into filenames and fileReaders) */
+      private static int fileCnt = 0;
+
+      public Parser(String[] filenames, boolean debug) {
+	  // set debugging flag
+	  this.debug = debug;
+	  
+	  // initialize filenames field to parameter filenames
+	  // used later for finding the name of the current file
+	  this.filenames = filenames;
+	  
+	  // check that there is at least one specified filename
+	  if (filenames.length == 0)
+	      throw new RuntimeException(
+	             "Must specify at least one filename to scan");
+	  // must initialize readers for each file (FileInputStream)
+	  fileReaders = new java.io.FileInputStream[filenames.length];
+	  for (int i = 0; i < filenames.length; i++) {
+	      // try...catch checks if file is found
+	      try {
+		  // create the ith file reader
+		  fileReaders[i] = new java.io.FileInputStream(filenames[i]);
+	      }
+	      catch(java.io.FileNotFoundException e) {
+		  // if file not found then report an error and exit
+		  System.err.println("Error: file '" +
+		                     filenames[i] + "' not found");
+		  System.exit(1);
+	      }
+	  }
+
+	  if (jj_initialized_once) {
+	      System.out.println(
+              "ERROR: Second call to constructor of static parser.  You must" +
+	      "       either use ReInit() or set the JavaCC option STATIC to " +
+	      "false       during parser generation.");
+	      throw new Error();
+	  }
+	  jj_initialized_once = true;
+
+	  try { jj_input_stream =
+	              new JavaCharStream(fileReaders[0], null, 1, 1); } 
+	  catch(java.io.UnsupportedEncodingException e) { 
+	      throw new RuntimeException(e); 
+	  }
+
+	  ReInit(fileReaders[0]);
+      }
+
+      /** Parse program
+        * @return parsed program as an AST (abstract syntax tree)
+        * */
+      public boolean parse() {
+	  // initialize the error handler and class list
+	  ErrorHandler errorHandler = new ErrorHandler();
+
+	  // loop over the files
+	  for (fileCnt = 0; fileCnt < fileReaders.length; fileCnt++) {
+	      try {
+		  if (fileCnt > 0)
+		           jj_input_stream.ReInit(fileReaders[fileCnt], 1, 1);
+
+		  Parser.Program();
+
+		  System.out.println( filenames[fileCnt] +
+		                      " is syntactically correct.");
+
+	      }
+	      catch(ParseException e) {
+
+		  String message = e.toString();
+		  int index = message.indexOf(": ");
+		  message = message.substring(index+2,message.length());
+		  errorHandler.register(
+		          errorHandler.PARSE_ERROR, filenames[fileCnt], 
+			  JavaCharStream.getBeginLine(), message);
+	      }
+	  }
+	  errorHandler.checkErrors();
+
+	  return true;
+      }
+
+      /** Get the filename of the file currently being scanned
+        * */
+      public static String getCurrFilename() {
+	  return filenames[fileCnt];
+      }
+
+  }
+PARSER_END(Parser)
+
+
+
+
+TOKEN_MGR_DECLS :
+{
+    // Use this for error handling
+    private static ErrorHandler errorHandler = new ErrorHandler();
+}
+
+
+
+/******************************************/
+/* copy your lexer rules from A1 below... */
+/******************************************/
+
+
+TOKEN : /* KEYWORDS and SPECIAL SYMBOLS */
+{
+  < CLASS: "class" >
+|
+  < EXTENDS: "extends" >
+|
+  < WHILE: "while" >
+|
+  < FOR: "for" >
+|
+  < IF: "if" >
+|
+  < ELSE: "else" >
+|
+  < NEW: "new" >
+|
+  < RETURN: "return" >
+|
+  < BREAK: "break" >
+|
+  < INSTANCEOF: "instanceof" >
+|
+  < EQ: "==" >
+|
+  < NEQ: "!=" >
+|
+  < LEQ: "<=" >
+|
+  < GEQ: ">=" >
+|
+  < LT: "<" >
+|
+  < GT: ">" >
+|
+  < AND: "&&" >
+|
+  < OR: "||" >
+|
+  < NOT: "!" >
+|
+  < LBRACE: "{" >
+|
+  < RBRACE: "}" >
+|
+  < LBRACK: "[" >
+|
+  < RBRACK: "]" >
+|
+  < LPAREN: "(" >
+|
+  < RPAREN: ")" >
+|
+  < ASSIGN: "=" >
+|
+  < SEMICOLON: ";" >
+|
+  < PERIOD: "." >
+|
+  < COMMA: "," >
+|
+  < COLON: ":" >
+|
+  < INC: "++" >
+|
+  < DEC: "--" >
+|
+  < PLUS: "+" >
+|
+  < MINUS: "-" >
+|
+  < TIMES: "*" >
+|
+  < DIV: "/" >
+|
+  < MOD: "%" >
+}
+
+TOKEN : /* CONSTANTS */
+{
+  < INT_CONST: (["0"-"9"])+ > {
+    if (Double.parseDouble(image.toString()) > Integer.MAX_VALUE)
+      errorHandler.register(errorHandler.LEX_ERROR,
+        Parser.getCurrFilename(), JavaCharStream.getBeginLine(),
+        "Integer exceeds maximum value allowed: " + image);
+  }
+|
+  < BOOLEAN_CONST: "true" | "false" >
+|
+  < STRING_CONST: "\"" ("\\" ~[] | ~["\\", "\""])* "\"" >
+}
+
+TOKEN : /* IDs */
+{
+  < ID: ["a"-"z","A"-"Z"] (["a"-"z","A"-"Z","0"-"9","_"])* >
+}
+
+<*>
+TOKEN : /* EOF */
+{
+  <EOF> { errorHandler.checkErrors(); }
+}
+
+SKIP :
+{
+  < ([" ","\t","\n"])+ >
+|
+  < "//" (~["\n"])+ >
+|
+  < "/*" (~["*"] | "*" ~["/"])* "*/" >
+}
+
+TOKEN : /* INVALID */
+{
+  < STRING_HEAD: "\"" > {
+    errorHandler.register(errorHandler.LEX_ERROR,
+      Parser.getCurrFilename(), JavaCharStream.getBeginLine(),
+      "Unterminated string starting with " + image);
+  }
+|
+  < COMMENT_HEAD: "/*" > {
+    errorHandler.register(errorHandler.LEX_ERROR,
+      Parser.getCurrFilename(), JavaCharStream.getBeginLine(),
+      "Unterminated multi-line comment starting with " + image);
+  }
+|
+  < UNKNOWN: ~[] > {
+    errorHandler.register(errorHandler.LEX_ERROR,
+      Parser.getCurrFilename(), JavaCharStream.getBeginLine(),
+      "Unsupported character: " + image);
+  }
+}
+
+/******************************************/
+/* Add your grammar rules below ...       */
+/******************************************/
+
+void Class() :
+{}
+{
+  <CLASS> <ID> (<EXTENDS> <ID>)? <LBRACE> (Member())* <RBRACE>
+}
+
+void Member() :
+{}
+{
+  Formal() (Method() | Field())
+}
+
+void Method() :
+{}
+{
+  <LPAREN> (Formal() (<COMMA> Formal())*)? <RPAREN> <LBRACE> (Stmt())* <RBRACE>
+}
+
+void Field() :
+{}
+{
+  <ASSIGN> Expr() <SEMICOLON>
+| <SEMICOLON>
+}
+
+void Formal() :
+{}
+{
+  <ID> (<LBRACK> <RBRACK>)? <ID>
+}
+
+void Stmt() :
+{}
+{
+  (LOOKAHEAD(3) ExprStmt() | DeclStmt())
+| IfStmt()
+| WhileStmt()
+| ForStmt()
+| BreakStmt()
+| ReturnStmt()
+| BlockStmt()
+}
+
+void ExprStmt() :
+{}
+{
+  Expr() <SEMICOLON>
+}
+
+void DeclStmt() :
+{}
+{
+  Formal() <ASSIGN> Expr() <SEMICOLON>
+}
+
+void IfStmt() :
+{}
+{
+  <IF> <LPAREN> Expr() <RPAREN> Stmt() (LOOKAHEAD(2) <ELSE> Stmt())?
+}
+
+void WhileStmt() :
+{}
+{
+  <WHILE> <LPAREN> Expr() <RPAREN> Stmt()
+}
+
+void ForStmt() :
+{}
+{
+  <FOR> <LPAREN>
+    (Expr())? <SEMICOLON>
+    (Expr())? <SEMICOLON>
+    (Expr())? <RPAREN> Stmt()
+}
+
+void BreakStmt() :
+{}
+{
+  <BREAK> <SEMICOLON>
+}
+
+void ReturnStmt() :
+{}
+{
+  <RETURN> (Expr())? <SEMICOLON>
+}
+
+void BlockStmt() :
+{}
+{
+  <LBRACE> (Stmt())* <RBRACE>
+}
+
+void Expr() :
+{}
+{
+  Expr1() (<ASSIGN> Expr())?
+}
+
+void Expr1() :
+{}
+{
+  Expr2() (<OR> Expr2())*
+}
+
+void Expr2() :
+{}
+{
+  Expr3() (<AND> Expr3())*
+}
+
+void Expr3() :
+{}
+{
+  Expr4() (Expr3a())*
+}
+
+void Expr3a() :
+{}
+{
+  <EQ> Expr4()
+| <NEQ> Expr4()
+}
+
+void Expr4() :
+{}
+{
+  Expr5() (Expr4a())*
+}
+
+void Expr4a() :
+{}
+{
+  (<LT> | <LEQ> | <GT> | <GEQ>) Expr5()
+| <INSTANCEOF> <ID> (<LBRACK> <RBRACK>)?
+}
+
+void Expr5() :
+{}
+{
+  Expr6() (Expr5a())*
+}
+
+void Expr5a() :
+{}
+{
+  <PLUS> Expr6()
+| <MINUS> Expr6()
+}
+
+void Expr6() :
+{}
+{
+  Expr7() (Expr6a())*
+}
+
+void Expr6a() :
+{}
+{
+  (<TIMES> | <DIV> | <MOD>) Expr7()
+}
+
+void Expr7() :
+{}
+{
+  LOOKAHEAD(4) <LPAREN> <ID> Expr7a()
+| Expr8()
+}
+
+void Expr7a() :
+{}
+{
+  <LBRACK> <RBRACK> <RPAREN> <LPAREN> Expr() <RPAREN>
+| <RPAREN> <LPAREN> Expr() <RPAREN>
+}
+
+void Expr8() :
+{}
+{
+  (<MINUS> | <NOT> | <INC> | <DEC>) Expr8()
+| Expr9()
+}
+
+void Expr9() :
+{}
+{
+  Expr10() (Expr9a())*
+}
+
+void Expr9a() :
+{}
+{
+  <PERIOD> <ID>
+| <LBRACK> Expr() <RBRACK>
+| <INC>
+| <DEC>
+| <LPAREN> (Expr() (<COMMA> Expr())*)? <RPAREN>
+}
+
+void Expr10() :
+{}
+{
+  <NEW> <ID> Expr10a()
+| <LPAREN> Expr() <RPAREN>
+| <INT_CONST> | <STRING_CONST> | <BOOLEAN_CONST> | <ID>
+}
+
+void Expr10a() :
+{}
+{
+  <LPAREN> <RPAREN>
+| <LBRACK> Expr() <RBRACK>
+}
+
+/* 
+
+Precedence (from highest to lowest)
+10  new  ()
+9   . (dispatch) [] ++ -- (postfix)[left]
+8   - (unary) !     ++ -- (prefix) [right]
+7   (casting)                      [right]
+6   * / %                          [left]
+5   + -                            [left]
+4   < <= > >= instanceof           [left]
+3   == !=                          [left]
+2   &&                             [left]
+1   ||                             [left]
+0   =                              [right]
+
+*/
+
+void Program() : {} { Class() Program() | <EOF> }
