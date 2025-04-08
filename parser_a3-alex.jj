@@ -1,0 +1,787 @@
+/* Bantam Java Compiler and Language Toolset.
+
+   Copyright (C) 2007 by Marc Corliss (corliss@hws.edu) and 
+                         E Christopher Lewis (lewis@vmware.com).
+   ALL RIGHTS RESERVED.
+
+   The Bantam Java toolset is distributed under the following 
+   conditions:
+
+     You may make copies of the toolset for your own use and 
+     modify those copies.
+
+     All copies of the toolset must retain the author names and 
+     copyright notice.
+
+     You may not sell the toolset or distribute it in 
+     conjunction with a commerical product or service without 
+     the expressed written consent of the author.
+
+   THIS SOFTWARE IS PROVIDED ``AS IS'' AND WITHOUT ANY EXPRESS 
+   OR IMPLIED WARRANTIES, INCLUDING, WITHOUT LIMITATION, THE 
+   IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A 
+   PARTICULAR PURPOSE. 
+*/
+
+options {
+  JAVA_UNICODE_ESCAPE = true;
+}
+
+PARSER_BEGIN(Parser)
+  package parser;
+
+  import ast.*;
+  import util.ErrorHandler;
+  import java.util.Stack;
+  import java.util.Iterator;
+
+  /** A class for performing syntactic analysis
+   * */
+  public class Parser {
+      /** Maximum string size allowed */
+      public static final int MAX_STRING_SIZE = 5000;
+      /** Is debugging enabled? */
+      private static boolean debug = false;
+      /** Filenames of source files */
+      private static String[] filenames = null;
+      /** Input streams of source files */
+      private static java.io.FileInputStream[] fileReaders = null;
+      /** Current file number (index into filenames and fileReaders) */
+      private static int fileCnt = 0;
+
+      public Parser(String[] filenames, boolean debug) {
+	  // set debugging flag
+	  this.debug = debug;
+	  
+	  // initialize filenames field to parameter filenames
+	  // used later for finding the name of the current file
+	  this.filenames = filenames;
+	  
+	  // check that there is at least one specified filename
+	  if (filenames.length == 0)
+	      throw new RuntimeException(
+	             "Must specify at least one filename to scan");
+	  // must initialize readers for each file (FileInputStream)
+	  fileReaders = new java.io.FileInputStream[filenames.length];
+	  for (int i = 0; i < filenames.length; i++) {
+	      // try...catch checks if file is found
+	      try {
+		  // create the ith file reader
+		  fileReaders[i] = new java.io.FileInputStream(filenames[i]);
+	      }
+	      catch(java.io.FileNotFoundException e) {
+		  // if file not found then report an error and exit
+		  System.err.println("Error: file '" +
+		                     filenames[i] + "' not found");
+		  System.exit(1);
+	      }
+	  }
+
+	  if (jj_initialized_once) {
+	      System.out.println(
+              "ERROR: Second call to constructor of static parser.  You must" +
+	      "       either use ReInit() or set the JavaCC option STATIC to " +
+	      "false       during parser generation.");
+	      throw new Error();
+	  }
+	  jj_initialized_once = true;
+
+	  try { jj_input_stream =
+	              new JavaCharStream(fileReaders[0], null, 1, 1); } 
+	  catch(java.io.UnsupportedEncodingException e) { 
+	      throw new RuntimeException(e); 
+	  }
+
+	  ReInit(fileReaders[0]);
+      }
+
+      /** Parse the program
+        * @return parsed program as an AST (abstract syntax tree)
+        * */
+      public Program parse() {
+	  // initialize the error handler and class list
+	  ErrorHandler errorHandler = new ErrorHandler();
+	  ClassList classList = new ClassList(0);
+
+	  // loop over the files
+	  for (fileCnt = 0; fileCnt < fileReaders.length; fileCnt++) {
+	      try {
+		  if (fileCnt > 0)
+		        jj_input_stream.ReInit(fileReaders[fileCnt], 1, 1);
+		  Program p = Parser.Program();
+		  
+		  for (Iterator iter = p.getClassList().getIterator();
+		       iter.hasNext();
+		      )
+		     classList.addElement((Class_)iter.next());
+	      }
+	      catch(ParseException e) {
+		  String message = e.toString();
+		  int index = message.indexOf(": ");
+		  message = message.substring(index+2,message.length());
+		  errorHandler.register(
+		       errorHandler.PARSE_ERROR, filenames[fileCnt], 
+		       JavaCharStream.getBeginLine(), message);
+	      }
+	  }
+
+	  errorHandler.checkErrors();
+
+	  return new Program(0, classList);
+      }
+
+      /** Get the filename of the file currently being scanned */
+      public static String getCurrFilename() {
+	  return filenames[fileCnt];
+      }
+  }
+PARSER_END(Parser)
+
+TOKEN_MGR_DECLS :
+{
+    // Use this for error handling
+    private static ErrorHandler errorHandler = new ErrorHandler();
+}
+
+/******************************************/
+/* copy your lexer rules from A1 below... */
+/******************************************/
+
+TOKEN : /* KEYWORDS and SPECIAL SYMBOLS */
+{
+  < CLASS: "class" >
+|
+  < EXTENDS: "extends" >
+|
+  < WHILE: "while" >
+|
+  < FOR: "for" >
+|
+  < IF: "if" >
+|
+  < ELSE: "else" >
+|
+  < NEW: "new" >
+|
+  < RETURN: "return" >
+|
+  < BREAK: "break" >
+|
+  < INSTANCEOF: "instanceof" >
+|
+  < EQ: "==" >
+|
+  < NEQ: "!=" >
+|
+  < LEQ: "<=" >
+|
+  < GEQ: ">=" >
+|
+  < LT: "<" >
+|
+  < GT: ">" >
+|
+  < AND: "&&" >
+|
+  < OR: "||" >
+|
+  < NOT: "!" >
+|
+  < LBRACE: "{" >
+|
+  < RBRACE: "}" >
+|
+  < LBRACK: "[" >
+|
+  < RBRACK: "]" >
+|
+  < LPAREN: "(" >
+|
+  < RPAREN: ")" >
+|
+  < ASSIGN: "=" >
+|
+  < SEMICOLON: ";" >
+|
+  < PERIOD: "." >
+|
+  < COMMA: "," >
+|
+  < COLON: ":" >
+|
+  < INC: "++" >
+|
+  < DEC: "--" >
+|
+  < PLUS: "+" >
+|
+  < MINUS: "-" >
+|
+  < TIMES: "*" >
+|
+  < DIV: "/" >
+|
+  < MOD: "%" >
+}
+
+TOKEN : /* CONSTANTS */
+{
+  < INT_CONST: (["0"-"9"])+ > {
+    if (Double.parseDouble(image.toString()) > Integer.MAX_VALUE)
+      errorHandler.register(errorHandler.LEX_ERROR,
+        Parser.getCurrFilename(), JavaCharStream.getBeginLine(),
+        "Integer exceeds maximum value allowed: " + image);
+  }
+|
+  < BOOLEAN_CONST: "true" | "false" >
+|
+  < STRING_CONST: "\"" ("\\" ~[] | ~["\\", "\""])* "\"" >
+}
+
+TOKEN : /* IDs */
+{
+  < ID: ["a"-"z","A"-"Z"] (["a"-"z","A"-"Z","0"-"9","_"])* >
+}
+
+<*>
+TOKEN : /* EOF */
+{
+  <EOF> { errorHandler.checkErrors(); }
+}
+
+SKIP :
+{
+  < ([" ","\t","\n"])+ >
+|
+  < "//" (~["\n"])+ >
+|
+  < "/*" (~["*"] | "*" ~["/"])* "*/" >
+}
+
+TOKEN : /* INVALID */
+{
+  < STRING_HEAD: "\"" > {
+    errorHandler.register(errorHandler.LEX_ERROR,
+      Parser.getCurrFilename(), JavaCharStream.getBeginLine(),
+      "Unterminated string starting with " + image);
+  }
+|
+  < COMMENT_HEAD: "/*" > {
+    errorHandler.register(errorHandler.LEX_ERROR,
+      Parser.getCurrFilename(), JavaCharStream.getBeginLine(),
+      "Unterminated multi-line comment starting with " + image);
+  }
+|
+  < UNKNOWN: ~[] > {
+    errorHandler.register(errorHandler.LEX_ERROR,
+      Parser.getCurrFilename(), JavaCharStream.getBeginLine(),
+      "Unsupported character: " + image);
+  }
+}
+
+/******************************************/
+/* Add your grammar rules with annotations
+   below ...                              */
+/******************************************/
+
+Class_ Class() :
+{
+  int line = JavaCharStream.getBeginLine();
+  Token name = null;
+  Token parent = null;
+  Member member = null;
+  MemberList memberList = new MemberList(line);
+}
+{
+  <CLASS> name = <ID> (<EXTENDS> parent = <ID>)? <LBRACE>
+    (member = Member() { memberList.addElement(member); })* <RBRACE>
+    {
+      if (parent != null) {
+        return new Class_(line, Parser.getCurrFilename(), 
+          name.image, parent.image, memberList);
+      }
+      else {
+        return new Class_(line, Parser.getCurrFilename(),
+          name.image, "Object", memberList);
+      }
+    }
+}
+
+Member Member() :
+{
+  int line = JavaCharStream.getBeginLine();
+  Token type = null;
+  Token arr = null;
+  Token name = null;
+  Member member = null;
+}
+{
+  type = <ID> (arr = <LBRACK> <RBRACK>)? name = <ID>
+    (member = Method(arr == null ? type.image : type.image + "[]",
+        name.image, line)
+    | member = Field(arr == null ? type.image : type.image + "[]",
+        name.image, line))
+    { return member; }
+}
+
+Method Method(String type, String name, int line) :
+{
+  Formal arg = null;
+  FormalList args = new FormalList(line);
+  Stmt stmt = null;
+  StmtList stmts = new StmtList(line);
+}
+{
+  <LPAREN> (arg = Formal() { args.addElement(arg); }
+    (<COMMA> arg = Formal() { args.addElement(arg); })*)? <RPAREN>
+    <LBRACE> (stmt = Stmt() { stmts.addElement(stmt); })* <RBRACE>
+    { return new Method(line, type, name, args, stmts); }
+}
+
+Field Field(String type, String name, int line) :
+{
+  Expr init = null;
+}
+{
+  (<ASSIGN> init = Expr())? <SEMICOLON>
+    { return new Field(line, type, name, init); }
+}
+
+Formal Formal() :
+{
+  int line = JavaCharStream.getBeginLine();
+  Token type = null;
+  Token arr = null;
+  Token name = null;
+}
+{
+  type = <ID> (arr = <LBRACK> <RBRACK>)? name = <ID>
+    {
+      if (arr != null) {
+        return new Formal(line, type.image + "[]", name.image);
+      }
+      else {
+        return new Formal(line, type.image, name.image);
+      }
+    }
+}
+
+Stmt Stmt() :
+{
+  Stmt stmt = null;
+}
+{
+  (LOOKAHEAD(3) stmt = ExprStmt() { return stmt; }
+    | stmt = DeclStmt() { return stmt; })
+| stmt = IfStmt() { return stmt; }
+| stmt = WhileStmt() { return stmt; }
+| stmt = ForStmt() { return stmt; }
+| stmt = BreakStmt() { return stmt; }
+| stmt = ReturnStmt() { return stmt; }
+| stmt = BlockStmt() { return stmt; }
+}
+
+ExprStmt ExprStmt() :
+{
+  int line = JavaCharStream.getBeginLine();
+  Expr expr = null;
+}
+{
+  expr = Expr() <SEMICOLON>
+    { return new ExprStmt(line, expr); }
+}
+
+DeclStmt DeclStmt() :
+{
+  int line = JavaCharStream.getBeginLine();
+  Token type = null;
+  Token arr = null;
+  Token name = null;
+  Expr expr = null;
+}
+{
+  type = <ID> (arr = <LBRACK> <RBRACK>)? name = <ID>
+  <ASSIGN> expr = Expr() <SEMICOLON>
+    {
+      if (arr != null) {
+        return new DeclStmt(line, type.image + "[]", name.image, expr);
+      }
+      else {
+        return new DeclStmt(line, type.image, name.image, expr);
+      }
+    }
+}
+
+IfStmt IfStmt() :
+{
+  int line = JavaCharStream.getBeginLine();
+  Expr predExpr = null;
+  Stmt thenStmt = null;
+  Stmt elseStmt = null;
+}
+{
+  <IF> <LPAREN> predExpr = Expr() <RPAREN> thenStmt = Stmt()
+    (LOOKAHEAD(2) <ELSE> elseStmt = Stmt())?
+    {
+      if (elseStmt == null) {
+        elseStmt = new BlockStmt(line, new StmtList(line));
+      }
+
+      return new IfStmt(line, predExpr, thenStmt, elseStmt);
+    }
+}
+
+WhileStmt WhileStmt() :
+{
+  int line = JavaCharStream.getBeginLine();
+  Expr expr = null;
+  Stmt stmt = null;
+}
+{
+  <WHILE> <LPAREN> expr = Expr() <RPAREN> stmt = Stmt()
+    { return new WhileStmt(line, expr, stmt); }
+}
+
+ForStmt ForStmt() :
+{
+  int line = JavaCharStream.getBeginLine();
+  Expr init = null;
+  Expr pred = null;
+  Expr update = null;
+  Stmt body = null;
+}
+{
+  <FOR> <LPAREN>
+    (init = Expr())? <SEMICOLON>
+    (pred = Expr())? <SEMICOLON>
+    (update = Expr())? <RPAREN> body = Stmt()
+    { return new ForStmt(line, init, pred, update, body); }	
+}
+
+BreakStmt BreakStmt() :
+{
+  int line = JavaCharStream.getBeginLine();
+}
+{
+  <BREAK> <SEMICOLON>
+    { return new BreakStmt(line); }
+}
+
+ReturnStmt ReturnStmt() :
+{
+  int line = JavaCharStream.getBeginLine();
+  Expr expr = null;
+}
+{
+  <RETURN> (expr = Expr())? <SEMICOLON>
+    { return new ReturnStmt(line, expr); }
+}
+
+BlockStmt BlockStmt() :
+{
+  int line = JavaCharStream.getBeginLine();
+  Stmt stmt = null;
+  StmtList stmtList = new StmtList(line);
+}
+{
+  <LBRACE> (stmt = Stmt() { stmtList.addElement(stmt); })* <RBRACE>
+    { return new BlockStmt(line, stmtList); }
+}
+
+Expr Expr() :
+{
+  int line = JavaCharStream.getBeginLine();
+  Expr expr = null;
+  Expr value = null;
+}
+{
+  expr = Expr1() (<ASSIGN> value = Expr()
+    {
+      if (expr instanceof ArrayExpr) {
+        ArrayExpr arr = (ArrayExpr)expr;
+        VarExpr ref = (VarExpr)arr.getRef();
+        String refName = ref == null ? null : ref.getName();
+
+        expr = new ArrayAssignExpr(line, refName, arr.getName(),
+          arr.getIndex(), value);
+      }
+      else if (expr instanceof VarExpr) {
+        VarExpr varExpr = (VarExpr)expr;
+        VarExpr ref = (VarExpr)varExpr.getRef();
+        String refName = ref == null ? null : ref.getName();
+
+        expr = new AssignExpr(line, refName, varExpr.getName(), value);
+      }
+    })? { return expr; }
+}
+
+Expr Expr1() :
+{
+  int line = JavaCharStream.getBeginLine();
+  Expr exprL = null;
+  Expr exprR = null;
+}
+{
+  exprL = Expr2() (<OR> exprR = Expr2()
+    { exprL = new BinaryLogicOrExpr(line, exprL, exprR);
+      line = exprR.getLineNum(); })* { return exprL; }
+}
+
+Expr Expr2() :
+{
+  int line = JavaCharStream.getBeginLine();
+  Expr exprL = null;
+  Expr exprR = null;
+}
+{
+  exprL = Expr3() (<AND> exprR = Expr3()
+    { exprL = new BinaryLogicAndExpr(line, exprL, exprR);
+      line = exprR.getLineNum(); })* { return exprL; }
+}
+
+Expr Expr3() :
+{
+  int line = JavaCharStream.getBeginLine();
+  Expr exprL = null;
+  Expr exprR = null;
+}
+{
+  exprL = Expr4() (<EQ> exprR = Expr4()
+    { exprL = new BinaryCompEqExpr(line, exprL, exprR); }
+  | <NEQ> exprR = Expr4()
+    { exprL = new BinaryCompNeExpr(line, exprL, exprR); })*
+      { return exprL; }
+}
+
+Expr Expr4() :
+{
+  int line = JavaCharStream.getBeginLine();
+  Expr exprL = null;
+  Expr exprR = null;
+  Token type = null;
+  Token arr = null;
+}
+{
+  exprL = Expr5() (<INSTANCEOF> type = <ID> (arr = <LBRACK> <RBRACK>)?
+    {
+      if (arr != null) {
+        return new InstanceofExpr(line, exprL, type.image + "[]");
+      }
+      else {
+        return new InstanceofExpr(line, exprL, type.image);
+      }
+    }
+  | <LT> exprR = Expr5()
+    { exprL = new BinaryCompLtExpr(line, exprL, exprR); }
+  | <LEQ> exprR = Expr5()
+    { exprL = new BinaryCompLeqExpr(line, exprL, exprR); }
+  | <GT> exprR = Expr5()
+    { exprL = new BinaryCompGtExpr(line, exprL, exprR); }
+  | <GEQ> exprR = Expr5()
+    { exprL = new BinaryCompGeqExpr(line, exprL, exprR); })*
+      { return exprL; }
+}
+
+Expr Expr5() :
+{
+  int line = JavaCharStream.getBeginLine();
+  Expr exprL = null;
+  Expr exprR = null;
+}
+{
+  exprL = Expr6() (<PLUS> exprR = Expr6()
+    { exprL = new BinaryArithPlusExpr(line, exprL, exprR); }
+  | <MINUS> exprR = Expr6()
+    { exprL = new BinaryArithMinusExpr(line, exprL, exprR); })*
+      { return exprL; }
+}
+
+Expr Expr6() :
+{
+  int line = JavaCharStream.getBeginLine();
+  Expr exprL = null;
+  Expr exprR = null;
+}
+{
+  exprL = Expr7() (<TIMES> exprR = Expr7()
+    { exprL = new BinaryArithTimesExpr(line, exprL, exprR); }
+  | <DIV> exprR = Expr7()
+    { exprL = new BinaryArithDivideExpr(line, exprL, exprR); }
+  | <MOD> exprR = Expr7()
+    { exprL = new BinaryArithModulusExpr(line, exprL, exprR); })*
+      { return exprL; }
+}
+
+Expr Expr7() :
+{
+  int line = JavaCharStream.getBeginLine();
+  Expr expr = null;
+  Token type = null;
+  Token arr = null;
+}
+{
+  LOOKAHEAD(4) <LPAREN> type = <ID> (arr = <LBRACK> <RBRACK>)?
+    <RPAREN> <LPAREN> expr = Expr() <RPAREN>
+    {
+      if (arr != null) {
+        return new CastExpr(line, type.image + "[]", expr);
+      }
+      else {
+        return new CastExpr(line, type.image, expr);
+      }
+    }
+| expr = Expr8() { return expr; }
+}
+
+Expr Expr8() :
+{
+  int line = JavaCharStream.getBeginLine();
+  Expr expr = null;
+}
+{
+  expr = Expr9() { return expr; }
+| <MINUS> expr = Expr8()
+    { return new UnaryNegExpr(line, expr); }
+| <NOT> expr = Expr8()
+    { return new UnaryNotExpr(line, expr); }
+| <INC> expr = Expr8()
+    { return new UnaryIncrExpr(line, expr, false); }
+| <DEC> expr = Expr8()
+    { return new UnaryDecrExpr(line, expr, false); }
+}
+
+Expr Expr9() :
+{
+  int line = JavaCharStream.getBeginLine();
+  Expr exprL = null;
+  Expr exprR = null;
+  Expr index = null;
+  Expr param = null;
+  ExprList params = new ExprList(line);
+  Token tok = null;
+}
+{
+  exprL = Expr10() (<PERIOD> tok = <ID>
+    { exprL = new VarExpr(line, exprL, tok.image); }
+  | <LPAREN> { params = new ExprList(line); }
+      (param = Expr() { params.addElement(param); }
+      (<COMMA> param = Expr() { params.addElement(param); })*)? <RPAREN>
+    {
+      if (exprL instanceof VarExpr) {
+        VarExpr varExpr = (VarExpr)exprL;
+        Expr ref = varExpr.getRef();
+        if (ref == null) {
+          ref = new VarExpr(line, null, "this");
+        }
+
+        exprL = new DispatchExpr(JavaCharStream.getBeginLine(),
+          ref, varExpr.getName(), params);
+      }
+    }
+  | <LBRACK> index = Expr() <RBRACK>
+    {
+      if (exprL instanceof VarExpr) {
+        VarExpr varExpr = (VarExpr)exprL;
+        exprL = new ArrayExpr(line, varExpr.getRef(),
+          varExpr.getName(), index);
+      }
+    }
+  | <INC>
+      { exprL = new UnaryIncrExpr(line, exprL, true); }
+  | <DEC>
+      { exprL = new UnaryDecrExpr(line, exprL, true); }
+  )* { return exprL; }
+}
+
+Expr Expr10() :
+{
+  int line = JavaCharStream.getBeginLine();
+  Token tok = null;
+  Expr expr = null;
+}
+{
+  <NEW> tok = <ID> (<LPAREN> <RPAREN>
+    | <LBRACK> expr = Expr() <RBRACK>)
+    {
+      if (expr == null) {
+        return new NewExpr(line, tok.image);
+      }
+      else {
+        return new NewArrayExpr(line, tok.image, expr);
+      }
+    }
+| <LPAREN> expr = Expr() <RPAREN>
+    { return expr; }
+| tok = <ID>
+    { return new VarExpr(line, null, tok.image); }
+| tok = <BOOLEAN_CONST>
+    { return new ConstBooleanExpr(line, tok.image); }
+| tok = <INT_CONST>
+    { return new ConstIntExpr(line, tok.image); }
+| tok = <STRING_CONST>
+    {
+      String output = "";
+      Boolean escape = false;
+
+      for (int i = 1; i < tok.image.length() - 1; i++) {
+        Character c = tok.image.charAt(i);
+        if (c == '\\' && !escape) {
+          escape = true;
+        }
+        else if (escape) {
+          switch (c) {
+            case 'n':
+              output += '\n';
+              break;
+            case 't':
+              output += '\t';
+              break;
+            case '"':
+              output += '\"';
+              break;
+            case '\\':
+              output += '\\';
+              break;
+            case 'f':
+              output += '\f';
+              break;
+          }
+
+          escape = false;
+        }
+        else {
+          output += c;
+        }
+      }
+
+      return new ConstStringExpr(line, output);
+    }
+}
+
+/* 
+
+Precedence (from highest to lowest)
+10  new  ()
+9   . (dispatch) [] ++ -- (postfix)[left]
+8   - (unary) !     ++ -- (prefix) [right]
+7   (casting)                      [right]
+6   * / %                          [left]
+5   + -                            [left]
+4   < <= > >= instanceof           [left]
+3   == !=                          [left]
+2   &&                             [left]
+1   ||                             [left]
+0   =                              [right]
+
+*/
+
+Program Program() :
+{
+  int line = JavaCharStream.getBeginLine();
+  Class_ currClass = null;
+  ClassList classList = new ClassList(line);
+}
+{
+  (currClass = Class() { classList.addElement(currClass); })*
+    <EOF> { return new Program(line, classList); }
+}
