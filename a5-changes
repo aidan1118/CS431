@@ -1,4 +1,4 @@
 1)
 - Removed all System.out.println() calls in CodeGenVisitor
-- Added 'writer.println(Bytecodes.aload(0));' on line 155, right above 'String className = TypeHelper.getBase(curClass.getName());' in visit(Field)
+- Added 'writer.println(Bytecodes.aload(0));' on line 155, right above 'String className = TypeHelper.getBase(curClass.getName());' in visit(Field) in CodeGenVisitor
 
