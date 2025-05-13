@@ -6,3 +6,85 @@
 - Added 'knownBases.put("Boolean", "java/lang/Boolean");' on line 13 in TypeHelper
 - Added 'knownDescriptors.put("Boolean", "Ljava/lang/Boolean;");' on line 22 in TypeHelper
 
+// =======================
+    // === Array Handling ===
+    // =======================
+    @Override
+    public void visit(ArrayExpr node) {
+        node.getArray().accept(this);    // Load array reference
+        node.getIndex().accept(this);    // Load index
+        writer.println("iaload");        // Load value at index
+    }
+
+    @Override
+    public void visit(ArrayAssignExpr node) {
+        node.getArray().accept(this);    // Load array reference
+        node.getIndex().accept(this);    // Load index
+        node.getExpr().accept(this);     // Load value
+        writer.println("iastore");       // Store value in array
+    }
+
+    @Override
+    public void visit(NewArrayExpr node) {
+        node.getSize().accept(this);     // Load array size
+        writer.println("newarray int");  // Allocate new int array
+    }
+
+    // ==============================
+    // === Logical Operations ===
+    // ==============================
+    @Override
+    public void visit(AndExpr node) {
+        node.getLeft().accept(this);
+        node.getRight().accept(this);
+        writer.println("iand");
+    }
+
+    @Override
+    public void visit(OrExpr node) {
+        node.getLeft().accept(this);
+        node.getRight().accept(this);
+        writer.println("ior");
+    }
+
+    @Override
+    public void visit(NotExpr node) {
+        node.getExpr().accept(this);
+        writer.println("iconst_1");
+        writer.println("ixor");
+    }
+
+    // ===============================
+    // === Relational Operations ===
+    // ===============================
+    @Override
+    public void visit(GreaterThanExpr node) {
+        String trueLabel = labels.getFreshLabel();
+        String endLabel = labels.getFreshLabel();
+
+        node.getLeft().accept(this);
+        node.getRight().accept(this);
+
+        writer.println("if_icmpgt " + trueLabel);
+        writer.println("iconst_0");
+        writer.println("goto " + endLabel);
+        writer.println(trueLabel + ":");
+        writer.println("iconst_1");
+        writer.println(endLabel + ":");
+    }
+
+    @Override
+    public void visit(LessThanExpr node) {
+        String trueLabel = labels.getFreshLabel();
+        String endLabel = labels.getFreshLabel();
+
+        node.getLeft().accept(this);
+        node.getRight().accept(this);
+
+        writer.println("if_icmplt " + trueLabel);
+        writer.println("iconst_0");
+        writer.println("goto " + endLabel);
+        writer.println(trueLabel + ":");
+        writer.println("iconst_1");
+        writer.println(endLabel + ":");
+    }
