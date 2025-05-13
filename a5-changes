@@ -2,3 +2,7 @@
 - Removed all System.out.println() calls in CodeGenVisitor
 - Added 'writer.println(Bytecodes.aload(0));' on line 155, right above 'String className = TypeHelper.getBase(curClass.getName());' in visit(Field) in CodeGenVisitor
 
+2)
+- Added 'knownBases.put("Boolean", "java/lang/Boolean");' on line 13 in TypeHelper
+- Added 'knownDescriptors.put("Boolean", "Ljava/lang/Boolean;");' on line 22 in TypeHelper
+
